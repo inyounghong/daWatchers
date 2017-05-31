@@ -1,6 +1,8 @@
 var WIDTH = 960;
 var HEIGHT = 600;
 
+var mappedSortedLinks;
+
 var colors = {
     "banned": "gray",
     "regular": "green",
@@ -16,41 +18,88 @@ var svg = d3.select("#watcherGraph").append("svg")
 
 
 d3.queue()
-    .defer(d3.csv, "data/watchers100.csv", parseLine)
-    .defer(d3.csv, "data/links100.csv", parseLinks)
+    .defer(d3.csv, "data/watchers20.csv", parseLine)
+    .defer(d3.csv, "data/links20.csv", parseLinks)
     .await(function (error, watcherData, linkData) {
-        console.log(watcherData);
+
+        // Mapped Watcher data name: {name, type, date}
+        mappedWatcherData = d3.map(watcherData, function(d){ return d.username });
 
         // Sort links
-        sortedLinksFlat = sortByKey(linkData, "numWatchers", false);
-        console.log(sortedLinksFlat);
+        sortedLinks = sortByKey(linkData, "numWatchers", false);
+        sortedLinks = sortedLinks.slice(0, 200);
+        console.log(sortedLinks);
+        mappedSortedLinks = d3.map(sortedLinks, function(d) { return d.source });
+
+        // Get nodes from reduced links
+        nodes = getNodes(sortedLinks, mappedWatcherData);
+        console.log(nodes);
 
         // Flatten links
-        linksFlat = processLinkData(linkData, watcherData);
+        linksFlat = processLinkData(sortedLinks, nodes);
         console.log(linksFlat);
 
+        // nodes.forEach(function(node) {
+        //     console.log(node.username);
+        // })
+
         // Plot
-        plotGraph(watcherData, linksFlat);
+        plotGraph(nodes, linksFlat);
     });
 
-function processLinkData(linkData, watcherData) {
+
+
+function getNodes(links, mappedWatcherData) {
+    var nodes = new Set();
+    links.forEach(function(link) {
+        var source = mappedWatcherData.get(link.source);
+        source.numWatchers = link.numWatchers;
+        if (source.numWatchers === undefined) {
+            source.numWatchers = 0;
+        }
+        nodes.add(source);
+        link.targets.forEach(function(t) {
+            // if (mappedSortedLinks.get(t) !== undefined) {
+                tNode = mappedWatcherData.get(t);
+                if (tNode.numWatchers == undefined) {
+                    tNode.numWatchers = 0;
+                    nodes.add(tNode);
+                }
+
+            // }
+        })
+    })
+
+    // Add simplysilent
+    var simply = {};
+    simply.username = "simplysilent";
+    simply.type = "senior";
+    simply.numWatchers = 100;
+    nodes.add(simply);
+
+    return Array.from(nodes);
+}
+
+function processLinkData(linkData, nodes) {
     var linksFlat = [];
 
     // Add simply links
-    watcherData.forEach(function(d) {
-        var o = {};
-        o.source = d.username;
-        o.target = "simplysilent";
-        linksFlat.push(o);
-    })
+    // nodes.forEach(function(d) {
+    //     var o = {};
+    //     o.source = d.username;
+    //     o.target = "simplysilent";
+    //     linksFlat.push(o);
+    // })
 
     // Flatten all links
     linkData.forEach(function(d) {
         d.targets.forEach(function(t) {
-            var o = {};
-            o.source = d.source; // source watches target
-            o.target = t;
-            linksFlat.push(o);
+            // if (mappedSortedLinks.get(t) !== undefined) {
+                var o = {};
+                o.source = d.source; // source watches target
+                o.target = t;
+                linksFlat.push(o);
+            // }
         });
     })
     return linksFlat;
@@ -85,6 +134,8 @@ function sortByKey(array, key, asc) {
     });
 }
 
+var sizeScale = d3.scaleLinear().domain([0, 100]).range([1,10]);
+
 var simulation = d3.forceSimulation()
     .force("link", d3.forceLink().id(function(d) { return d.username; }))
     .force("charge", d3.forceManyBody())
@@ -104,7 +155,7 @@ function plotGraph(nodes, links) {
         .selectAll("circle")
         .data(nodes)
         .enter().append("circle")
-        .attr("r", 3)
+        .attr("r", function(d) { return sizeScale(d.numWatchers); })
         .attr("fill", function(d) { return colors[d.type]; })
         .call(d3.drag()
         .on("start", dragstarted)
@@ -135,7 +186,7 @@ function plotGraph(nodes, links) {
 };
 
 function dragstarted(d) {
-if (!d3.event.active) simulation.alphaTarget(0.1).restart();
+if (!d3.event.active) simulation.alphaTarget(0.05).restart();
 d.fx = d.x;
 d.fy = d.y;
 }
