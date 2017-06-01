@@ -1,4 +1,4 @@
-
+var types = ["normal", "volunteer", "staff", "deactivated"];
 var mappedSeniorData;
 var typeColors = {
     "volunteer": colorArray[1],
@@ -16,9 +16,12 @@ d3.queue()
     mappedSeniorData = d3.map(seniorData, function(d) { return d.username });
     console.log(mappedSeniorData);
 
-    processAverages(seniorLinksData);
+    averageData = processAverages(seniorData, seniorPieData);
+    processMedians(seniorData);
 
     drawPie(seniorPieData);
+    drawStackedGraph(averageData);
+    drawFriendsLineGraph(seniorData);
 });
 
 function unmap(mappedData) {
@@ -28,7 +31,6 @@ function unmap(mappedData) {
     })
     return array;
 }
-
 
 
 function parsePieLine(row) {
@@ -45,9 +47,65 @@ function parseLine(row) {
     return row;
 }
 
+function produceTotals() {
+    var totals = {};
+    types.forEach(function(type) {
+        var o = {};
+        types.forEach(function(type2) {
+            o[type2] = 0;
+        });
+        totals[type] = o;
+    })
+    return totals;
+}
 
-function processAverages(linksData) {
+var counts = {
+    "volunteer": 451,
+    "staff": 114,
+    "normal": 937,
+    "deactivated": 104,
+}
 
+function processMedians(seniorData) {
+    // normal
+    var volunteerSeniors = seniorData.filter(function(d) { return d.type === "volunteer"});
+    console.log(volunteerSeniors)
+    var median = d3.median(volunteerSeniors, function(d) { return d.num_volunteer_friends });
+    console.log(median);
+}
+
+
+// Dumping fourteenthstar
+function processAverages(seniorData, seniorPieData) {
+    var totals = produceTotals();
+
+    seniorData.forEach(function(d) {
+        if (d.username !== "fourteenthstar") {
+            types.forEach(function(t) {
+                totals[d.type][t] += d["num_" + t + "_friends"];
+            })
+        }
+    })
+
+    // Produce averages
+    types.forEach(function(type) {
+        types.forEach(function(t) {
+            totals[type][t] /= counts[type];
+        })
+    })
+
+    var arr = [];
+    Object.keys(totals).forEach(function(key) {
+        var o = {};
+        o.type = key;
+        o.normal = totals[key]["normal"];
+        o.volunteer = totals[key]["volunteer"]
+        o.staff = totals[key]["staff"]
+        o.deactivated = totals[key]["deactivated"]
+        arr.push(o);
+    })
+
+    return arr;
 }
 
 function processForPie(rawData) {
@@ -108,4 +166,83 @@ function drawPie(data) {
       .attr("transform", function(d) { return "translate(" + label.centroid(d) + ")"; })
       .attr("dy", "0.35em")
       .text(function(d) { return d.data.type; });
+}
+
+function drawStackedGraph(averageData) {
+    console.log(averageData);
+    var height = 100;
+    var width = 800;
+    var padding = 20;
+    var rectHeight = 20;
+
+    function getY(type) {
+        if (type === "volunteer") {
+            return 0;
+        }
+        if (type === "staff") {
+            return 1;
+        }
+        return 2;
+    }
+
+    var svg = d3.select("#stackedGraph").append("svg")
+        .attr("height", height + padding * 2)
+        .attr("width", width + padding * 2);
+
+    var scaleX = d3.scaleLinear().domain([0, 10]).range([0, width]);
+    var scaleY = d3.scaleLinear().domain([0, 3]).range([0, height]);
+    var plot = svg.append("g").attr("transform", "translate(" + padding + "," + padding + ")");
+
+    var rects = plot.selectAll("rect")
+        .data(averageData)
+        .enter().append("rect")
+        .attr("x", function(d) { return 0; })
+        .attr("y", function(d) { return scaleY(getY(d.type)) })
+        .attr("width", function(d) { return scaleX(d.normal); })
+        .attr("height", rectHeight)
+        .attr("fill", function(d) { return typeColors[d.type];
+        })
+        .attr("r", 5)
+        ;
+}
+
+// Num friends line graph
+function drawFriendsLineGraph(seniorData) {
+
+    function getY(type) {
+        if (type === "volunteer") {
+            return 0;
+        }
+        if (type === "staff") {
+            return 1;
+        }
+        return 2;
+    }
+
+    var height = 100;
+    var width = 800;
+    var padding = 20;
+
+    var svg = d3.select("#friendsGraph").append("svg")
+        .attr("height", height + padding * 2)
+        .attr("width", width + padding * 2);
+
+    var numFriendsExtent = d3.extent(seniorData, function(d) { return d.num_total_friends; });
+    var scaleX = d3.scaleLinear().domain(numFriendsExtent).range([0, width]);
+    var scaleY = d3.scaleLinear().domain([0, 3]).range([0, height]);
+    var plot = svg.append("g").attr("transform", "translate(" + padding + "," + padding + ")");
+
+    var circles = plot.selectAll("circle.seniors")
+        .data(seniorData)
+        .enter().append("circle")
+        .attr("cx", function(d) { return scaleX(d.num_total_friends); })
+        .attr("cy", function(d) { return scaleY(getY(d.type)) })
+        .attr("fill", function(d) {
+            if (d.username === "SimplySilent") {
+                return colorArray[8];
+            }
+            return typeColors[d.type];
+        })
+        .attr("r", 5)
+        ;
 }
