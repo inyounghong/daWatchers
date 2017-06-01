@@ -1,5 +1,29 @@
-var WIDTH = 3000;
-var HEIGHT = 3000;
+var WIDTH = 1200;
+var HEIGHT = 1000;
+var NODE_SIZE = 8;
+var NODE_SIZE_HOVER = 12;
+
+var VERSION = "1-1000";
+
+var dateColors = {
+    "08": "red",
+    "09": "orange",
+    "10": "yellow",
+    "11": "green",
+    "12": "blue",
+    "13": "purple",
+    "14": "pink",
+}
+
+var typeColors = {
+    "volunteer": colorArray[3],
+    "staff": colorArray[9],
+    "normal": colorArray[1],
+    "deactivated": colorArray[0],
+}
+
+// data
+var mappedSeniorData;
 
 var svg = d3.select("#graph").append("svg")
     .attr("class", "axis")
@@ -24,12 +48,15 @@ function parseNodes(row) {
     return row;
 }
 
-var version = "1-100";
+
 
 d3.queue()
-    .defer(d3.csv, "data/seniors" + version + ".csv", parseNodes)
-    .defer(d3.csv, "data/seniorLinks" + version + ".csv", parseLinks)
-    .await(function (error, nodes, links) {
+    .defer(d3.csv, "data/seniors" + VERSION + ".csv", parseNodes)
+    .defer(d3.csv, "data/seniorLinks" + VERSION + ".csv", parseLinks)
+    .defer(d3.csv, "data/seniorData.csv")
+    .await(function (error, nodes, links, seniorData) {
+
+        mappedSeniorData = d3.map(seniorData, function(d) { return d.username });
 
         console.log(nodes);
         console.log(links);
@@ -50,40 +77,134 @@ function sortByKey(array, key, asc) {
     });
 }
 
-function getColor(name) {
-    if (name === "SimplySilent") {
-        console.log("here");
-        return "red";
+// Returns 0 (no date), 1 (>= 2012), 2(<= 2011)
+function getGroupByDate2(name) {
+    var fullData = mappedSeniorData.get(name);
+    if (fullData.date_of_seniority === "") {
+        return 0;
     }
-    if (name === "fourteenthstar") {
+    var year = parseInt(fullData.date_of_seniority.split("/")[2]);
+    if (year >= 12) {
+        return 1;
+    } else if (year >= 10){
+        return 2;
+    } else {
+        return 3;
+    }
+}
+
+function getSizeByDate2(name) {
+    if (getGroupByDate2(name) > 0) {
+        return 5;
+    } else {
+        return 3;
+    }
+}
+
+function getColorByDate2(name) {
+    var groupColors = ["gray", "red", "#5fffe1", "yellow"];
+    return groupColors[getGroupByDate2(name)];
+}
+
+function getColorByDate(name) {
+    if (name === "SimplySilent") {
         return "blue";
     }
-    return "black";
+    var fullData = mappedSeniorData.get(name);
+    if (fullData.date_of_seniority === "") {
+        return "gray";
+    }
+    var year = fullData.date_of_seniority.split("/")[2];
+    return dateColors[year];
+}
+
+function getLinkColorByType(d) {
+    var sourceData = mappedSeniorData.get(d.source);
+    var targetData = mappedSeniorData.get(d.target);
+
+
+    if (sourceData.former_volunteer || targetData.former_volunteer) {
+        return typeColors["volunteer"];
+    }
+    if (sourceData.former_staff || targetData.former_staff) {
+        return typeColors["staff"];
+    }
+
+    return typeColors["other"];
+}
+
+function getColorByType(name) {
+    if (name === "SimplySilent") {
+        return "green";
+    }
+    var fullData = mappedSeniorData.get(name);
+
+    if (fullData.former_staff) {
+        return typeColors["staff"];
+    }
+    if (fullData.former_volunteer) {
+        return typeColors["volunteer"];
+    }
+    return typeColors["other"];
+}
+
+function translate(x, y) {
+    return "translate(" + x + "," + y + ")";
 }
 
 function plotGraph(nodes, links) {
 
-    var link = svg.append("g")
+    var g = svg.append("g");
+    g.attr("transform", "scale(0.4) " + translate(600, 300));
+
+    var link = g
         .attr("class", "links")
         .selectAll("line")
         .data(links)
         .enter().append("line")
-        .attr("stroke-width", function(d) { return 1; });
+        .attr("stroke", function(d) { return getLinkColorByType(d); })
+        ;
 
-    var node = svg.append("g")
-        .attr("class", "nodes")
-        .selectAll("circle")
+    var node = g.selectAll(".node")
         .data(nodes)
-        .enter().append("circle")
-        .attr("r", function(d) { return 3; })
-        .attr("fill", function(d) { return getColor(d.username); })
+        .enter().append("g")
         .call(d3.drag()
+
         .on("start", dragstarted)
         .on("drag", dragged)
         .on("end", dragended));
 
-    node.append("title")
-        .text(function(d) { return d.username; });
+    node.append("circle")
+        .attr("class", "node")
+        .attr("r", function(d) { return NODE_SIZE; })
+        .attr("fill", function(d) { return getColorByType(d.username); })
+        .on("mouseover", function(d) {
+            d3.select(this).attr("r", NODE_SIZE_HOVER);
+        })
+        .on("mouseout", function(d) {
+            d3.select(this).attr("r", NODE_SIZE);
+        })
+        // .attr("stroke", function(d) { return getColorByType(d.username); })
+
+    node.append("text")
+        .text(function(d) { return d.username; })
+        .attr("dx", 20)
+        .attr("fill", "black")
+        .attr("dy", ".35em");
+
+    // svg.append("rect")
+    //     .attr("width", WIDTH)
+    //     .attr("height", HEIGHT)
+    //     .style("fill", "none")
+    //     .style("pointer-events", "all")
+    //     // .call(d3.zoom()
+    //     //     .scaleExtent([1.5, 2])
+    //     //     .on("zoom", zoomed));
+    //
+    //     // function zoomed() {
+    //     //   g.attr("transform", d3.event.transform);
+    //     // }
+
 
     simulation
         .nodes(nodes)
@@ -99,11 +220,14 @@ function plotGraph(nodes, links) {
             .attr("x2", function(d) { return d.target.x; })
             .attr("y2", function(d) { return d.target.y; });
 
-        node
-            .attr("cx", function(d) { return d.x; })
-            .attr("cy", function(d) { return d.y; });
+        node.attr("transform", function(d) { return translate(d.x,d.y); });
+        // node
+        //     .attr("cx", function(d) { return d.x; })
+        //     .attr("cy", function(d) { return d.y; });
         }
 };
+
+
 
 function dragstarted(d) {
     if (!d3.event.active) simulation.alphaTarget(0.01).restart();
